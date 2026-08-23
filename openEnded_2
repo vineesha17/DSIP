@@ -1,0 +1,247 @@
+import os
+from pydub import AudioSegment
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import convolve
+
+
+# =====================================================
+# Inverse Filtering Function
+# =====================================================
+
+def inverse_filter(signal, kernel, epsilon=1e-5):
+
+    N = len(signal)
+
+    SIGNAL = np.fft.fft(signal, N)
+    KERNEL = np.fft.fft(kernel, N)
+
+    recovered = np.real(
+        np.fft.ifft(SIGNAL / (KERNEL + epsilon))
+    )
+
+    return recovered
+
+base_path = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+# Different Impulse Responses
+kernels = {
+
+    "Kernel1": np.array(
+        [1, 0, 1, 0, 1],
+        dtype=np.float32
+    ),
+
+    "Kernel2": np.array(
+        [1, 0.5, 0, 0.5, 1],
+        dtype=np.float32
+    ),
+
+    "Kernel3": np.array(
+        [1, 0, 0.5, 0, 0.25],
+        dtype=np.float32
+    )
+
+}
+
+songs = sorted([
+    os.path.join(base_path, file)
+    for file in os.listdir(base_path)
+    if file.lower().endswith(".wav")
+])
+output_folder = os.path.join(
+    base_path,
+    "Output"
+)
+
+os.makedirs(
+    output_folder,
+    exist_ok=True
+)
+
+
+print("Total WAV files found:", len(songs))
+for song in songs:
+
+    filename = os.path.splitext(
+        os.path.basename(song)
+    )[0]
+
+    print("\nProcessing:", filename)
+
+    audio = AudioSegment.from_wav(song)
+
+
+    # Convert to mono
+    audio = audio.set_channels(1)
+  # Extract samples
+
+    samples = np.array(
+        audio.get_array_of_samples()
+    ).astype(np.float32)
+
+
+    # Normalize original signal
+
+    max_value = np.max(
+        np.abs(samples)
+    )
+
+    if max_value != 0:
+        samples = samples / max_value
+    for name, kernel in kernels.items():
+
+        print("Using:", name)
+        convoluted = convolve(
+            samples,
+            kernel,
+            mode="same"
+        )
+
+
+        # Normalize convoluted signal
+
+        max_value = np.max(
+            np.abs(convoluted)
+        )
+
+        if max_value != 0:
+            convoluted = (
+                convoluted / max_value
+            )
+        convoluted_int16 = (
+            convoluted * 32767
+        ).astype(np.int16)
+
+
+        convoluted_audio = AudioSegment(
+
+            convoluted_int16.tobytes(),
+
+            frame_rate=audio.frame_rate,
+
+            sample_width=2,
+
+            channels=1
+        )
+
+
+        convoluted_path = os.path.join(
+            output_folder,
+            f"{filename}_{name}_convoluted.wav"
+        )
+
+
+        convoluted_audio.export(
+            convoluted_path,
+            format="wav"
+        )
+        recovered = inverse_filter(
+            convoluted,
+            kernel
+        )
+
+
+        # Normalize recovered signal
+
+        max_value = np.max(
+            np.abs(recovered)
+        )
+
+        if max_value != 0:
+            recovered = (
+                recovered / max_value
+            )
+        recovered_int16 = (
+            recovered * 32767
+        ).astype(np.int16)
+
+
+        recovered_audio = AudioSegment(
+
+            recovered_int16.tobytes(),
+
+            frame_rate=audio.frame_rate,
+
+            sample_width=2,
+
+            channels=1
+        )
+
+        recovered_path = os.path.join(
+            output_folder,
+            f"{filename}_{name}_recovered.wav"
+        )
+
+
+        recovered_audio.export(
+            recovered_path,
+            format="wav"
+        )
+        plt.figure(
+            figsize=(12, 6)
+        )
+        plt.suptitle(
+            f"{filename} - {name}\n"
+            f"Impulse Response: {kernel}",
+            fontsize=14
+        )
+        plt.subplot(2, 1, 1)
+
+        plt.plot(
+            samples[:5000]
+        )
+
+        plt.title(
+            "Original Audio Signal"
+        )
+
+        plt.grid(True)
+        plt.subplot(2, 1, 2)
+
+        plt.plot(
+            convoluted[:5000]
+        )
+
+        plt.title(
+            "Convoluted Audio Signal"
+        )
+
+        plt.grid(True)
+
+
+        plt.tight_layout(
+            rect=[0, 0, 1, 0.93]
+        )
+
+        graph_path = os.path.join(
+            output_folder,
+            f"{filename}_{name}_graph.png"
+        )
+        plt.savefig(
+            graph_path
+        )
+        if filename.lower() == "song01":
+
+            plt.show()
+
+        else:
+
+            plt.close()
+print("\n========================================")
+print("Experiment Completed Successfully!")
+print("========================================")
+print(
+    "Songs processed:",
+    len(songs)
+)
+print(
+    "Impulse responses used:",
+    len(kernels)
+)
+print(
+    "All output files are saved in:",
+    output_folder
+)
